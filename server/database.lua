@@ -53,6 +53,9 @@ function InitializeDatabase()
 end
 
 function LoadElectionSettings()
+    -- Initialize the settings table if it's not already initialized
+    settings = settings or {}
+
     MySQL.Async.fetchAll('SELECT setting_key, setting_value FROM ' .. Config.DatabaseTable.settings, {}, function(result)
         if result and #result > 0 then
             for _, setting in ipairs(result) do
@@ -66,20 +69,32 @@ function LoadElectionSettings()
     end)
 end
 
+
 function UpdateElectionSettings()
     for key, value in pairs(settings) do
         local strValue = tostring(value)
+        
+        -- Convert boolean to 1 or 0
         if type(value) == "boolean" then
             strValue = value and "1" or "0"
         end
+        
+        print("Updating setting: " .. key .. " to value: " .. strValue) -- Debugging log
         
         MySQL.Async.execute([[
             UPDATE ]] .. Config.DatabaseTable.settings .. [[ 
             SET setting_value = ? 
             WHERE setting_key = ?
-        ]], {strValue, key})
+        ]], {strValue, key}, function(affectedRows)
+            if affectedRows > 0 then
+                print("Setting updated successfully: " .. key) -- Log successful update
+            else
+                print("Failed to update setting: " .. key) -- Log failure
+            end
+        end)
     end
 end
+
 
 function LoadCandidates()
     MySQL.Async.fetchAll('SELECT * FROM ' .. Config.DatabaseTable.candidates, {}, function(result)

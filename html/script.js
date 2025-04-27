@@ -100,13 +100,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.getElementById('reset-election').addEventListener('click', function() {
-        if (confirm('Are you sure you want to reset the election? This will delete all candidates and votes.')) {
             fetch('https://elections/resetElection', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({})
             });
-        }
     });
     
     document.getElementById('announce-results').addEventListener('click', function() {
