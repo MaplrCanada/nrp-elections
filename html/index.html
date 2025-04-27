@@ -1,0 +1,197 @@
+<!-- File: html/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Los Santos Elections</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Main Menu -->
+    <div id="main-menu" class="container">
+        <div class="header">
+            <img src="img/logo.png" alt="Los Santos Elections" class="logo">
+            <h1>Los Santos Elections</h1>
+            <span class="close-btn" id="close-main"><i class="fas fa-times"></i></span>
+        </div>
+        <div class="content">
+            <div class="menu-options">
+                <div class="menu-option" id="register-option">
+                    <i class="fas fa-user-plus"></i>
+                    <h2>Register as Candidate</h2>
+                    <p>Submit your application to run in the election</p>
+                </div>
+                <div class="menu-option" id="vote-option">
+                    <i class="fas fa-vote-yea"></i>
+                    <h2>Vote</h2>
+                    <p>Cast your vote for a candidate</p>
+                </div>
+                <div class="menu-option" id="view-candidates-option">
+                    <i class="fas fa-users"></i>
+                    <h2>View Candidates</h2>
+                    <p>See all registered candidates</p>
+                </div>
+            </div>
+        </div>
+        <div class="footer">
+            <p>Los Santos Department of Elections</p>
+        </div>
+    </div>
+
+    <!-- Registration Form -->
+    <div id="registration-form" class="container">
+        <div class="header">
+            <h1>Candidate Registration</h1>
+            <span class="close-btn" id="close-registration"><i class="fas fa-times"></i></span>
+        </div>
+        <div class="content">
+            <form id="candidate-form">
+                <div class="form-group">
+                    <label for="slogan">Campaign Slogan</label>
+                    <input type="text" id="slogan" name="slogan" required maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label for="promises">Campaign Promises</label>
+                    <textarea id="promises" name="promises" required rows="5"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="party">Political Party</label>
+                    <select id="party" name="party">
+                        <option value="Independent">Independent</option>
+                        <option value="Liberty Party">Liberty Party</option>
+                        <option value="Citizens Coalition">Citizens Coalition</option>
+                        <option value="Progressive Alliance">Progressive Alliance</option>
+                        <option value="Conservative Union">Conservative Union</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="photo">Profile Photo (URL)</label>
+                    <input type="text" id="photo" name="photo" placeholder="Leave blank for default">
+                </div>
+                <button type="submit" class="submit-btn">Register</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Voting Screen -->
+    <div id="voting-screen" class="container">
+        <div class="header">
+            <h1>Cast Your Vote</h1>
+            <span class="close-btn" id="close-voting"><i class="fas fa-times"></i></span>
+        </div>
+        <div class="content">
+            <div class="candidates-list" id="voting-candidates-list">
+                <!-- Candidates will be populated here dynamically -->
+            </div>
+        </div>
+        <div class="footer">
+            <p>Your vote is anonymous and can only be cast once.</p>
+        </div>
+    </div>
+
+    <!-- Candidate Details -->
+    <div id="candidate-details" class="container">
+        <div class="header">
+            <h1>Candidate Profile</h1>
+            <span class="close-btn" id="close-details"><i class="fas fa-times"></i></span>
+        </div>
+        <div class="content">
+            <div class="candidate-profile">
+                <div class="profile-header">
+                    <img id="candidate-photo" src="img/default.jpg" alt="Candidate">
+                    <div class="profile-info">
+                        <h2 id="candidate-name">Name</h2>
+                        <p id="candidate-party">Party</p>
+                    </div>
+                </div>
+                <div class="profile-body">
+                    <div class="section">
+                        <h3>Campaign Slogan</h3>
+                        <p id="candidate-slogan">Slogan</p>
+                    </div>
+                    <div class="section">
+                        <h3>Campaign Promises</h3>
+                        <p id="candidate-promises">Promises</p>
+                    </div>
+                </div>
+                <button id="vote-button" class="vote-btn">Vote for this Candidate</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results Screen -->
+    <div id="results-screen" class="container">
+        <div class="header">
+            <h1>Election Results</h1>
+            <span class="close-btn" id="close-results"><i class="fas fa-times"></i></span>
+        </div>
+        <div class="content">
+            <div class="winner-section">
+                <h2>Winner</h2>
+                <div class="winner-card">
+                    <img id="winner-photo" src="img/default.jpg" alt="Winner">
+                    <div class="winner-info">
+                        <h3 id="winner-name">Name</h3>
+                        <p id="winner-party">Party</p>
+                        <p id="winner-votes">0 votes</p>
+                    </div>
+                </div>
+            </div>
+            <div class="all-results">
+                <h2>All Candidates</h2>
+                <div id="results-list" class="results-list">
+                    <!-- Results will be populated here dynamically -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Admin Panel -->
+    <div id="admin-panel" class="container">
+        <div class="header">
+            <h1>Election Administration</h1>
+            <span class="close-btn" id="close-admin"><i class="fas fa-times"></i></span>
+        </div>
+        <div class="content">
+            <div class="admin-controls">
+                <div class="control-section">
+                    <h2>Election Status</h2>
+                    <div class="toggle-controls">
+                        <div class="toggle-item">
+                            <label>Registration Open</label>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="toggle-registration" class="toggle-input">
+                                <label for="toggle-registration" class="toggle-label"></label>
+                            </div>
+                        </div>
+                        <div class="toggle-item">
+                            <label>Voting Open</label>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="toggle-voting" class="toggle-input">
+                                <label for="toggle-voting" class="toggle-label"></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="control-section">
+                    <h2>Election Management</h2>
+                    <div class="admin-buttons">
+                        <button id="reset-election" class="admin-btn danger">Reset Election</button>
+                        <button id="announce-results" class="admin-btn primary">Announce Results</button>
+                    </div>
+                </div>
+                <div class="control-section">
+                    <h2>Candidate Management</h2>
+                    <div id="admin-candidates-list" class="admin-candidates-list">
+                        <!-- Admin candidate list will be populated here dynamically -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

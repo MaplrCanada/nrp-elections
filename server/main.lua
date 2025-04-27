@@ -1,17 +1,23 @@
--- Server-side script (server/main.lua)
+-- File: server/main.lua
 
 local QBCore = exports['qb-core']:GetCoreObject()
 local candidates = {}
-local votes = {}
-local registrationOpen = true
-local votingOpen = false
+local settings = Config.DefaultSettings
+
+-- Initialize and load data from database
+Citizen.CreateThread(function()
+    InitializeDatabase()
+    Wait(1000) -- Wait for DB to initialize
+    LoadElectionSettings()
+    LoadCandidates()
+end)
 
 -- Register candidate
 QBCore.Functions.CreateCallback('elections:registerCandidate', function(source, cb, data)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     
-    if not registrationOpen then
+    if not settings.registration_open then
         cb(false, "Registration is closed")
         return
     end
@@ -19,26 +25,34 @@ QBCore.Functions.CreateCallback('elections:registerCandidate', function(source, 
     local citizenid = Player.PlayerData.citizenid
     
     -- Check if player is already registered
-    for _, candidate in pairs(candidates) do
-        if candidate.citizenid == citizenid then
+    CheckCandidateExists(citizenid, function(exists)
+        if exists then
             cb(false, "You are already registered as a candidate")
             return
         end
-    end
-    
-    -- Register new candidate
-    local candidateInfo = {
-        citizenid = citizenid,
-        name = Player.PlayerData.charinfo.firstname .. " " .. Player.PlayerData.charinfo.lastname,
-        slogan = data.slogan or "",
-        promises = data.promises or "",
-        votes = 0,
-        photo = data.photo or "https://via.placeholder.com/150"
-    }
-    
-    table.insert(candidates, candidateInfo)
-    TriggerClientEvent('elections:updateCandidates', -1, candidates)
-    cb(true, "You have successfully registered as a candidate")
+        
+        -- Register new candidate
+        local candidateInfo = {
+            citizenid = citizenid,
+            name = Player.PlayerData.charinfo.firstname .. " " .. Player.PlayerData.charinfo.lastname,
+            slogan = data.slogan or "",
+            promises = data.promises or "",
+            party = data.party or "Independent",
+            photo = data.photo or "default.jpg",
+            votes = 0
+        }
+        
+        InsertCandidate(candidateInfo, function(success)
+            if success then
+                -- Add to local cache
+                table.insert(candidates, candidateInfo)
+                TriggerClientEvent('elections:updateCandidates', -1, candidates)
+                cb(true, "You have successfully registered as a candidate")
+            else
+                cb(false, "Failed to register. Please try again.")
+            end
+        end)
+    end)
 end)
 
 -- Vote for candidate
@@ -47,38 +61,44 @@ QBCore.Functions.CreateCallback('elections:vote', function(source, cb, candidate
     local Player = QBCore.Functions.GetPlayer(src)
     local citizenid = Player.PlayerData.citizenid
     
-    if not votingOpen then
+    if not settings.voting_open then
         cb(false, "Voting is not currently open")
         return
     end
     
     -- Check if player has already voted
-    if votes[citizenid] then
-        cb(false, "You have already voted")
-        return
-    end
-    
-    -- Check if candidate exists
-    local candidateFound = false
-    for i, candidate in pairs(candidates) do
-        if candidate.citizenid == candidateId then
-            candidates[i].votes = candidates[i].votes + 1
-            candidateFound = true
-            break
+    CheckVoteExists(citizenid, function(hasVoted)
+        if hasVoted then
+            cb(false, "You have already voted")
+            return
         end
-    end
-    
-    if not candidateFound then
-        cb(false, "Candidate not found")
-        return
-    end
-    
-    -- Register vote
-    votes[citizenid] = candidateId
-    
-    -- Update all clients
-    TriggerClientEvent('elections:updateCandidates', -1, candidates)
-    cb(true, "Your vote has been registered")
+        
+        -- Check if candidate exists
+        local candidateFound = false
+        for i, candidate in pairs(candidates) do
+            if candidate.citizenid == candidateId then
+                candidates[i].votes = candidates[i].votes + 1
+                candidateFound = true
+                
+                -- Update votes in database
+                UpdateCandidateVotes(candidateId, candidates[i].votes)
+                
+                -- Record vote
+                RecordVote(citizenid, candidateId)
+                
+                break
+            end
+        end
+        
+        if not candidateFound then
+            cb(false, "Candidate not found")
+            return
+        end
+        
+        -- Update all clients
+        TriggerClientEvent('elections:updateCandidates', -1, candidates)
+        cb(true, "Your vote has been registered")
+    end)
 end)
 
 -- Get candidates
@@ -92,97 +112,99 @@ QBCore.Functions.CreateCallback('elections:hasVoted', function(source, cb)
     local Player = QBCore.Functions.GetPlayer(src)
     local citizenid = Player.PlayerData.citizenid
     
-    cb(votes[citizenid] ~= nil)
+    CheckVoteExists(citizenid, function(hasVoted)
+        cb(hasVoted)
+    end)
+end)
+
+-- Get election settings
+QBCore.Functions.CreateCallback('elections:getSettings', function(source, cb)
+    cb(settings)
 end)
 
 -- Admin commands
-QBCore.Commands.Add('openregistration', 'Open candidate registration', {}, false, function(source, args)
+QBCore.Commands.Add('electionadmin', 'Open election admin panel', {}, false, function(source, args)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     
-    if Player.PlayerData.job.grade.level >= 3 then -- Admin check
-        registrationOpen = true
-        TriggerClientEvent('QBCore:Notify', -1, 'Election registration is now open!', 'success')
+    if Player.PlayerData.job.grade.level >= Config.AdminRank then
+        TriggerClientEvent('elections:openAdminPanel', src)
     else
         TriggerClientEvent('QBCore:Notify', src, 'You do not have permission', 'error')
     end
 end)
 
-QBCore.Commands.Add('closeregistration', 'Close candidate registration', {}, false, function(source, args)
+-- Admin command handlers
+RegisterNetEvent('elections:server:toggleRegistration')
+AddEventHandler('elections:server:toggleRegistration', function(state)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     
-    if Player.PlayerData.job.grade.level >= 3 then -- Admin check
-        registrationOpen = false
-        TriggerClientEvent('QBCore:Notify', -1, 'Election registration is now closed!', 'error')
-    else
-        TriggerClientEvent('QBCore:Notify', src, 'You do not have permission', 'error')
+    if Player.PlayerData.job.grade.level >= Config.AdminRank then
+        settings.registration_open = state
+        UpdateElectionSettings()
+        TriggerClientEvent('QBCore:Notify', -1, 'Election registration is now ' .. (state and 'open' or 'closed'), state and 'success' or 'error')
     end
 end)
 
-QBCore.Commands.Add('openvoting', 'Open voting period', {}, false, function(source, args)
+RegisterNetEvent('elections:server:toggleVoting')
+AddEventHandler('elections:server:toggleVoting', function(state)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     
-    if Player.PlayerData.job.grade.level >= 3 then -- Admin check
-        votingOpen = true
-        TriggerClientEvent('QBCore:Notify', -1, 'Voting is now open!', 'success')
-    else
-        TriggerClientEvent('QBCore:Notify', src, 'You do not have permission', 'error')
+    if Player.PlayerData.job.grade.level >= Config.AdminRank then
+        settings.voting_open = state
+        UpdateElectionSettings()
+        TriggerClientEvent('QBCore:Notify', -1, 'Voting is now ' .. (state and 'open' or 'closed'), state and 'success' or 'error')
     end
 end)
 
-QBCore.Commands.Add('closevoting', 'Close voting period', {}, false, function(source, args)
+RegisterNetEvent('elections:server:resetElection')
+AddEventHandler('elections:server:resetElection', function()
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     
-    if Player.PlayerData.job.grade.level >= 3 then -- Admin check
-        votingOpen = false
-        TriggerClientEvent('QBCore:Notify', -1, 'Voting is now closed!', 'error')
-    else
-        TriggerClientEvent('QBCore:Notify', src, 'You do not have permission', 'error')
+    if Player.PlayerData.job.grade.level >= Config.AdminRank then
+        ResetElection(function(success)
+            if success then
+                candidates = {}
+                settings = Config.DefaultSettings
+                TriggerClientEvent('elections:updateCandidates', -1, candidates)
+                TriggerClientEvent('QBCore:Notify', -1, 'The election has been reset', 'primary')
+            else
+                TriggerClientEvent('QBCore:Notify', src, 'Failed to reset election', 'error')
+            end
+        end)
     end
 end)
 
-QBCore.Commands.Add('electionresults', 'Show election results', {}, false, function(source, args)
+RegisterNetEvent('elections:server:announceResults')
+AddEventHandler('elections:server:announceResults', function()
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     
-    if Player.PlayerData.job.grade.level >= 3 then -- Admin check
+    if Player.PlayerData.job.grade.level >= Config.AdminRank then
         -- Sort candidates by votes
         table.sort(candidates, function(a, b) return a.votes > b.votes end)
         
-        -- Announce winner and results
         if #candidates > 0 then
             local winner = candidates[1]
-            local resultMessage = winner.name .. " has won the election with " .. winner.votes .. " votes!"
-            TriggerClientEvent('QBCore:Notify', -1, resultMessage, 'success')
-            
-            -- Also display detailed results to the admin
-            for i, candidate in ipairs(candidates) do
-                TriggerClientEvent('QBCore:Notify', src, i .. ". " .. candidate.name .. ": " .. candidate.votes .. " votes", 'primary')
+            if winner.votes > 0 then
+                local resultMessage = winner.name .. " has won the election with " .. winner.votes .. " votes!"
+                TriggerClientEvent('elections:displayResults', -1, candidates, winner)
+            else
+                TriggerClientEvent('QBCore:Notify', src, 'No votes have been cast yet', 'error')
             end
         else
             TriggerClientEvent('QBCore:Notify', src, 'No candidates registered', 'error')
         end
-    else
-        TriggerClientEvent('QBCore:Notify', src, 'You do not have permission', 'error')
     end
 end)
 
-QBCore.Commands.Add('resetelection', 'Reset the election', {}, false, function(source, args)
+-- Player connection
+RegisterNetEvent('QBCore:Server:PlayerLoaded')
+AddEventHandler('QBCore:Server:PlayerLoaded', function()
     local src = source
-    local Player = QBCore.Functions.GetPlayer(src)
-    
-    if Player.PlayerData.job.grade.level >= 3 then -- Admin check
-        candidates = {}
-        votes = {}
-        registrationOpen = true
-        votingOpen = false
-        TriggerClientEvent('elections:updateCandidates', -1, candidates)
-        TriggerClientEvent('QBCore:Notify', -1, 'The election has been reset', 'primary')
-    else
-        TriggerClientEvent('QBCore:Notify', src, 'You do not have permission', 'error')
-    end
+    TriggerClientEvent('elections:updateCandidates', src, candidates)
+    TriggerClientEvent('elections:updateSettings', src, settings)
 end)
-

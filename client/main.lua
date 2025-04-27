@@ -1,8 +1,40 @@
--- Client-side script (client/main.lua)
+-- File: client/main.lua
 
 local QBCore = exports['qb-core']:GetCoreObject()
 local candidates = {}
-local isMenuOpen = false
+local settings = {}
+local isNearBooth = false
+local currentBooth = nil
+local booths = {}
+
+-- Initialize
+Citizen.CreateThread(function()
+    -- Create voting booth props and blips
+    for i, booth in ipairs(Config.VotingBooths) do
+        -- Create blip
+        local blip = AddBlipForCoord(booth.coords)
+        SetBlipSprite(blip, Config.ElectionBlip.sprite)
+        SetBlipColour(blip, Config.ElectionBlip.color)
+        SetBlipScale(blip, Config.ElectionBlip.scale)
+        SetBlipAsShortRange(blip, true)
+        BeginTextCommandSetBlipName("STRING")
+        AddTextComponentString(Config.ElectionBlip.label)
+        EndTextCommandSetBlipName(blip)
+        
+        -- Store booth data
+        booth.blip = blip
+        booths[i] = booth
+    end
+    
+    -- Request initial data
+    QBCore.Functions.TriggerCallback('elections:getCandidates', function(candidatesList)
+        candidates = candidatesList
+    end)
+    
+    QBCore.Functions.TriggerCallback('elections:getSettings', function(settingsData)
+        settings = settingsData
+    end)
+end)
 
 -- Update candidates list
 RegisterNetEvent('elections:updateCandidates')
@@ -10,225 +42,112 @@ AddEventHandler('elections:updateCandidates', function(candidatesList)
     candidates = candidatesList
 end)
 
--- Command to open registration menu
-RegisterCommand('register', function()
-    QBCore.Functions.TriggerCallback('elections:getCandidates', function(candidatesList)
-        candidates = candidatesList
-        OpenRegistrationMenu()
-    end)
+-- Update settings
+RegisterNetEvent('elections:updateSettings')
+AddEventHandler('elections:updateSettings', function(settingsData)
+    settings = settingsData
 end)
 
--- Command to open voting menu
-RegisterCommand('vote', function()
-    QBCore.Functions.TriggerCallback('elections:hasVoted', function(hasVoted)
-        if hasVoted then
-            QBCore.Functions.Notify('You have already voted', 'error')
-            return
+-- Check for voting booths proximity
+Citizen.CreateThread(function()
+    while true do
+        local playerPed = PlayerPedId()
+        local playerCoords = GetEntityCoords(playerPed)
+        local sleep = 1000
+        
+        isNearBooth = false
+        currentBooth = nil
+        
+        for i, booth in ipairs(booths) do
+            local distance = #(playerCoords - booth.coords)
+            
+            if distance < 10.0 then
+                sleep = 0
+                DrawMarker(1, booth.coords.x, booth.coords.y, booth.coords.z - 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.5, 1.5, 1.0, 255, 0, 0, 100, false, true, 2, false, nil, nil, false)
+                
+                if distance < 2.0 then
+                    isNearBooth = true
+                    currentBooth = booth
+                    -- Display help text
+                    BeginTextCommandDisplayHelp("STRING")
+                    AddTextComponentSubstringPlayerName("Press ~INPUT_CONTEXT~ to access the voting system")
+                    EndTextCommandDisplayHelp(0, false, true, -1)
+                    
+                    -- Handle interaction
+                    if IsControlJustReleased(0, 38) then -- E key
+                        OpenElectionMenu()
+                    end
+                end
+            end
         end
         
-        QBCore.Functions.TriggerCallback('elections:getCandidates', function(candidatesList)
-            candidates = candidatesList
-            OpenVotingMenu()
-        end)
-    end)
-end)
-
--- Registration menu
-function OpenRegistrationMenu()
-    if isMenuOpen then return end
-    
-    isMenuOpen = true
-    
-    local registrationMenu = {
-        {
-            header = "Candidate Registration",
-            isMenuHeader = true
-        },
-        {
-            header = "Register as Candidate",
-            txt = "Submit your candidacy for the election",
-            params = {
-                event = "elections:registerCandidateForm"
-            }
-        },
-        {
-            header = "Close Menu",
-            txt = "",
-            params = {
-                event = "qb-menu:client:closeMenu"
-            }
-        }
-    }
-    
-    exports['qb-menu']:openMenu(registrationMenu)
-    isMenuOpen = false
-end
-
--- Registration form
-RegisterNetEvent('elections:registerCandidateForm')
-AddEventHandler('elections:registerCandidateForm', function()
-    local dialog = exports['qb-input']:ShowInput({
-        header = "Candidate Registration",
-        submitText = "Register",
-        inputs = {
-            {
-                text = "Campaign Slogan",
-                name = "slogan",
-                type = "text",
-                isRequired = true
-            },
-            {
-                text = "Campaign Promises",
-                name = "promises",
-                type = "text",
-                isRequired = true
-            }
-        }
-    })
-    
-    if dialog then
-        QBCore.Functions.TriggerCallback('elections:registerCandidate', function(success, message)
-            QBCore.Functions.Notify(message, success and 'success' or 'error')
-        end, dialog)
+        Citizen.Wait(sleep)
     end
 end)
 
--- Voting menu
-function OpenVotingMenu()
-    if isMenuOpen then return end
-    
-    isMenuOpen = true
-    
-    local votingMenu = {
-        {
-            header = "Election Voting",
-            isMenuHeader = true
-        }
-    }
-    
-    if #candidates == 0 then
-        table.insert(votingMenu, {
-            header = "No candidates available",
-            txt = "Check back later",
-            params = {
-                event = "qb-menu:client:closeMenu"
-            }
-        })
-    else
-        for _, candidate in pairs(candidates) do
-            table.insert(votingMenu, {
-                header = candidate.name,
-                txt = "Slogan: " .. candidate.slogan,
-                params = {
-                    event = "elections:viewCandidate",
-                    args = {
-                        citizenid = candidate.citizenid,
-                        name = candidate.name,
-                        slogan = candidate.slogan,
-                        promises = candidate.promises
-                    }
-                }
-            })
+-- Create and spawn props (called during resource start)
+Citizen.CreateThread(function()
+    for _, booth in ipairs(Config.VotingBooths) do
+        RequestModel(GetHashKey(booth.model))
+        while not HasModelLoaded(GetHashKey(booth.model)) do
+            Citizen.Wait(1)
         end
+        
+        local boothObj = CreateObject(GetHashKey(booth.model), booth.coords.x, booth.coords.y, booth.coords.z, false, true, true)
+        SetEntityHeading(boothObj, booth.heading)
+        FreezeEntityPosition(boothObj, true)
+        SetModelAsNoLongerNeeded(GetHashKey(booth.model))
+    end
+end)
+
+-- Display election results
+RegisterNetEvent('elections:displayResults')
+AddEventHandler('elections:displayResults', function(candidatesList, winner)
+    SendNUIMessage({
+        action = "showResults",
+        candidates = candidatesList,
+        winner = winner,
+        settings = settings
+    })
+    SetNuiFocus(true, true)
+end)
+
+-- Open admin panel
+RegisterNetEvent('elections:openAdminPanel')
+AddEventHandler('elections:openAdminPanel', function()
+    SendNUIMessage({
+        action = "showAdminPanel",
+        candidates = candidates,
+        settings = settings
+    })
+    SetNuiFocus(true, true)
+end)
+
+-- Main election menu
+function OpenElectionMenu()
+    if not settings.election_active then
+        QBCore.Functions.Notify("There is no active election at this time.", "error")
+        return
     end
     
-    table.insert(votingMenu, {
-        header = "Close Menu",
-        txt = "",
-        params = {
-            event = "qb-menu:client:closeMenu"
-        }
-    })
-    
-    exports['qb-menu']:openMenu(votingMenu)
-    isMenuOpen = false
+    QBCore.Functions.TriggerCallback('elections:hasVoted', function(hasVoted)
+        SendNUIMessage({
+            action = "showMainMenu",
+            hasVoted = hasVoted,
+            canRegister = settings.registration_open,
+            canVote = settings.voting_open and not hasVoted,
+            candidates = candidates,
+            settings = settings
+        })
+        SetNuiFocus(true, true)
+    end)
 end
 
--- View candidate details
-RegisterNetEvent('elections:viewCandidate')
-AddEventHandler('elections:viewCandidate', function(data)
-    local candidateMenu = {
-        {
-            header = "Candidate: " .. data.name,
-            isMenuHeader = true
-        },
-        {
-            header = "Slogan",
-            txt = data.slogan,
-            params = {
-                event = "elections:returnToVoting"
-            }
-        },
-        {
-            header = "Promises",
-            txt = data.promises,
-            params = {
-                event = "elections:returnToVoting"
-            }
-        },
-        {
-            header = "Vote for this candidate",
-            txt = "Your vote is final",
-            params = {
-                event = "elections:confirmVote",
-                args = {
-                    citizenid = data.citizenid,
-                    name = data.name
-                }
-            }
-        },
-        {
-            header = "Back to Candidates",
-            txt = "",
-            params = {
-                event = "elections:returnToVoting"
-            }
-        }
-    }
-    
-    exports['qb-menu']:openMenu(candidateMenu)
-end)
-
--- Return to voting menu
-RegisterNetEvent('elections:returnToVoting')
-AddEventHandler('elections:returnToVoting', function()
-    OpenVotingMenu()
-end)
-
--- Confirm vote
-RegisterNetEvent('elections:confirmVote')
-AddEventHandler('elections:confirmVote', function(data)
-    local confirmMenu = {
-        {
-            header = "Confirm Your Vote",
-            isMenuHeader = true
-        },
-        {
-            header = "Vote for " .. data.name,
-            txt = "This action cannot be undone",
-            params = {
-                event = "elections:submitVote",
-                args = {
-                    citizenid = data.citizenid
-                }
-            }
-        },
-        {
-            header = "Cancel",
-            txt = "Return to candidates",
-            params = {
-                event = "elections:returnToVoting"
-            }
-        }
-    }
-    
-    exports['qb-menu']:openMenu(confirmMenu)
-end)
-
--- Submit vote
-RegisterNetEvent('elections:submitVote')
-AddEventHandler('elections:submitVote', function(data)
-    QBCore.Functions.TriggerCallback('elections:vote', function(success, message)
-        QBCore.Functions.Notify(message, success and 'success' or 'error')
-    end, data.citizenid)
+-- Register command as fallback
+RegisterCommand('elections', function()
+    if isNearBooth then
+        OpenElectionMenu()
+    else
+        QBCore.Functions.Notify("You need to be at a voting booth to access elections.", "error")
+    end
 end)
