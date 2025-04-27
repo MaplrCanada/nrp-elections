@@ -141,8 +141,9 @@ AddEventHandler('elections:server:toggleRegistration', function(state)
     local Player = QBCore.Functions.GetPlayer(src)
     
     if Player.PlayerData.job.grade.level >= Config.AdminRank then
-        settings.registration_open = state
-        UpdateElectionSettings()
+        settings.registration_open = state  -- Set the state directly from UI
+        print("Setting registration_open to: " .. tostring(state))  -- Debug log
+        UpdateElectionSettings()  -- Save to database
         TriggerClientEvent('QBCore:Notify', -1, 'Election registration is now ' .. (state and 'open' or 'closed'), state and 'success' or 'error')
     end
 end)
@@ -153,8 +154,9 @@ AddEventHandler('elections:server:toggleVoting', function(state)
     local Player = QBCore.Functions.GetPlayer(src)
     
     if Player.PlayerData.job.grade.level >= Config.AdminRank then
-        settings.voting_open = state
-        UpdateElectionSettings()
+        settings.voting_open = state  -- Set the state directly from UI
+        print("Setting voting_open to: " .. tostring(state))  -- Debug log
+        UpdateElectionSettings()  -- Save to database
         TriggerClientEvent('QBCore:Notify', -1, 'Voting is now ' .. (state and 'open' or 'closed'), state and 'success' or 'error')
     end
 end)
